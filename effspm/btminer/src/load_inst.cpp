@@ -1,4 +1,3 @@
-// effspm/btminer/src/load_inst.cpp
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -57,6 +56,7 @@ bool Preprocess(string &inst, double thresh);
 bool Load_instance(string &items_file, double thresh) {
     clock_t kk = clock();
 
+    // root node for MDD
     Tree.emplace_back(0, 0, 0);
 
     if (pre_pro) {
@@ -93,7 +93,7 @@ bool Load_instance(string &items_file, double thresh) {
 }
 
 // ---------------------------------------------------------------------
-// Preprocess (UNCHANGED as per your request)
+// preprocessing pass (FIXED LOGIC)
 // ---------------------------------------------------------------------
 bool Preprocess(string &inst, double thresh) {
     N = 0;
@@ -109,18 +109,37 @@ bool Preprocess(string &inst, double thresh) {
         string line;
         while (getline(file, line) && give_time(clock() - start_time) < time_limit) {
             ++N;
-            vector<bool> counted(L, false);
-
             istringstream word(line);
             string itm;
+            vector<bool> counted; // Dynamic sizing
+            
             while (word >> itm) {
-                int ditem = stoi(itm);
-                if (L < abs(ditem))
-                    L = abs(ditem);
+                int ditem;
+                
+                // FIX: Use Dictionary Logic here too!
+                if (use_dic) {
+                    auto it = item_map.find(itm);
+                    if (it == item_map.end()) {
+                        item_map[itm] = ++L;
+                        item_map_rev[L] = itm;
+                        ditem = L;
+                    } else {
+                        ditem = it->second;
+                    }
+                } else {
+                    // Fallback for raw integers
+                    try {
+                        ditem = stoi(itm);
+                    } catch (...) { continue; }
+                    if (L < abs(ditem)) L = abs(ditem);
+                }
 
-                while (static_cast<int>(freq.size()) < L) {
-                    freq.push_back(0);
-                    counted.push_back(false);
+                // Safety resize (Fixes potential crash)
+                if (static_cast<int>(freq.size()) < L) {
+                    freq.resize(L, 0);
+                }
+                if (static_cast<int>(counted.size()) < L) {
+                    counted.resize(L, false);
                 }
 
                 int idx = abs(ditem) - 1;
@@ -157,7 +176,7 @@ bool Preprocess(string &inst, double thresh) {
 }
 
 // ---------------------------------------------------------------------
-// Load_items_pre (UNCHANGED)
+// load after preprocessing
 // ---------------------------------------------------------------------
 void Load_items_pre(string &inst_name) {
     ifstream file(inst_name);
@@ -171,18 +190,21 @@ void Load_items_pre(string &inst_name) {
             bool sgn = false;
             while (word >> itm) {
                 int ditem;
+                
+                // Dictionary Lookup (Uses map built in Preprocess)
                 if (use_dic) {
                     auto it = item_map.find(itm);
                     if (it == item_map.end()) {
-                        item_map[itm] = ++L;
-                        item_map_rev[L] = itm;
-                        ditem = L;
+                        // If Preprocess didn't see it, it's definitely not frequent
+                        continue; 
                     } else {
                         ditem = it->second;
                     }
                 } else {
                     ditem = stoi(itm);
                 }
+
+                if (abs(ditem) - 1 >= static_cast<int>(freq.size())) continue;
 
                 if (freq[abs(ditem) - 1] < theta) {
                     if (!sgn)
@@ -201,7 +223,9 @@ void Load_items_pre(string &inst_name) {
                     sgn = false;
                 }
 
-                temp_vec.push_back(ditem);
+                // Valid item found
+                if (ditem != 0)
+                    temp_vec.push_back(ditem);
             }
 
             if (temp_vec.empty())
@@ -218,7 +242,7 @@ void Load_items_pre(string &inst_name) {
 }
 
 // ---------------------------------------------------------------------
-// Load_items (FIXED: Moved DFS logic out of 'else')
+// load without preprocessing
 // ---------------------------------------------------------------------
 bool Load_items(string &inst_name) {
     ifstream file(inst_name);
@@ -241,7 +265,6 @@ bool Load_items(string &inst_name) {
                     } else {
                         ditem = it->second;
                     }
-                    // CRASH FIX: Ensure L tracks max item even in dictionary mode
                     if (L < abs(ditem)) L = abs(ditem);
                 } else {
                     ditem = stoi(itm);
@@ -250,8 +273,6 @@ bool Load_items(string &inst_name) {
                     }
                 }
 
-                // CRASH FIX: This loop used to be inside the 'else' block.
-                // It must run regardless of use_dic mode, or DFS vector stays empty -> Crash.
                 while (static_cast<int>(DFS.size()) < L && !just_build) {
                     DFS.reserve(L);
                     DFS.emplace_back(-((int)DFS.size()) - 1);
