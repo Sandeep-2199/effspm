@@ -6,7 +6,7 @@
 #include <map>
 #include <pybind11/pybind11.h>
 
-#include "largepp/src/pattern.hpp"   // ← ensure Pattern is a complete type here
+#include "pattern.hpp"
 
 namespace largepp {
 using namespace std;
@@ -15,9 +15,12 @@ using namespace std;
 bool Load_instance(std::string& items_file, double thresh);
 void Load_py(const pybind11::object& py_data, double thresh);
 
-// shared state (defined in load_inst.cpp)
+// shared state
 extern std::vector<std::vector<int>> items;
 extern std::string                    out_file;
+
+// FIX: Expose item_dic so _effspm.cpp can clean it up
+extern std::vector<int>               item_dic; 
 
 extern bool b_disp, b_write, use_dic, just_build, ovr_count, pre_pro;
 extern bool use_list;

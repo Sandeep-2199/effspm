@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "effspm"
-version = "0.3.3"
+version = "0.3.4"
 description = "Prefix‑Projection and other sequential pattern mining algorithms"
 authors = [
   { name = "yeshu999", email = "vootlayeswanth20@gmail.com" }

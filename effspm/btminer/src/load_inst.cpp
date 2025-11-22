@@ -16,12 +16,12 @@ namespace btminer {
 using namespace std;
 
 // ---------------------------------------------------------------------
-// global definitions (must match load_inst.hpp)
+// global definitions
 // ---------------------------------------------------------------------
 int  M = 0;
 int  N = 0;
 int  L = 0;
-unsigned long long E = 0ULL;    // matches header: extern unsigned long long E;
+unsigned long long E = 0ULL;
 int  num_nodes = 0;
 int  theta = 0;
 int  cur_node = 0;
@@ -32,7 +32,6 @@ map<int, string>  item_map_rev;
 std::vector<int>  freq;
 std::vector<int>  item_dic;
 std::vector<std::vector<int>> items; 
-// ✅ REAL DEFINITION lives here:
 std::vector<Pattern> DFS;
 
 string out_file, folder;
@@ -44,13 +43,10 @@ bool   pre_pro   = 1;
 
 int    N_mult    = 1;
 int    M_mult    = 1;
-int    time_limit= 30 * 3600;    // 30 hours, same as professor
+int    time_limit= 30 * 3600;
 
 clock_t start_time;
 
-// ---------------------------------------------------------------------
-// forward decls
-// ---------------------------------------------------------------------
 void Load_items_pre(string &inst_name);
 bool Load_items(string &inst_name);
 bool Preprocess(string &inst, double thresh);
@@ -61,7 +57,6 @@ bool Preprocess(string &inst, double thresh);
 bool Load_instance(string &items_file, double thresh) {
     clock_t kk = clock();
 
-    // root node for MDD
     Tree.emplace_back(0, 0, 0);
 
     if (pre_pro) {
@@ -70,7 +65,6 @@ bool Load_instance(string &items_file, double thresh) {
         if (b_disp)
            cout << "\nPreprocess done in " << give_time(clock() - kk) << " seconds\n\n";
 
-        // build empty DFS of size L
         DFS.clear();
         DFS.reserve(L);
         for (int i = 0; i < L; ++i)
@@ -94,13 +88,12 @@ bool Load_instance(string &items_file, double thresh) {
         cout << "Found " << N * N_mult
              << " sequence, with max line len " << M
              << ", and " << L << " items, and " << E << " enteries\n";
-    //cout << "Total MDD nodes: " << Tree.size() << endl;
 
     return true;
 }
 
 // ---------------------------------------------------------------------
-// preprocessing pass
+// Preprocess (UNCHANGED as per your request)
 // ---------------------------------------------------------------------
 bool Preprocess(string &inst, double thresh) {
     N = 0;
@@ -109,8 +102,6 @@ bool Preprocess(string &inst, double thresh) {
     item_dic.clear();
     item_map.clear();
     item_map_rev.clear();
-    // (E is usually for entries during Build_MDD, so we can leave it
-    //  for the load phase; it’s already reset in the binding)
 
     ifstream file(inst);
 
@@ -127,7 +118,6 @@ bool Preprocess(string &inst, double thresh) {
                 if (L < abs(ditem))
                     L = abs(ditem);
 
-                // extend freq / counted if L grew
                 while (static_cast<int>(freq.size()) < L) {
                     freq.push_back(0);
                     counted.push_back(false);
@@ -150,7 +140,6 @@ bool Preprocess(string &inst, double thresh) {
     else
         theta = static_cast<int>(thresh);
 
-    // build item_dic with only frequent items
     int real_L = 0;
     item_dic = vector<int>(L, -1);
     for (int i = 0; i < L; ++i) {
@@ -162,13 +151,13 @@ bool Preprocess(string &inst, double thresh) {
          << " Reduced to: " << real_L << endl;
 
     L = real_L;
-    N = 0;   // will be recounted in Load_items_pre
+    N = 0; 
 
     return true;
 }
 
 // ---------------------------------------------------------------------
-// load after preprocessing
+// Load_items_pre (UNCHANGED)
 // ---------------------------------------------------------------------
 void Load_items_pre(string &inst_name) {
     ifstream file(inst_name);
@@ -195,7 +184,6 @@ void Load_items_pre(string &inst_name) {
                     ditem = stoi(itm);
                 }
 
-                // drop infrequent items
                 if (freq[abs(ditem) - 1] < theta) {
                     if (!sgn)
                         sgn = (ditem < 0);
@@ -224,14 +212,13 @@ void Load_items_pre(string &inst_name) {
             if (static_cast<int>(temp_vec.size()) > M)
                 M = static_cast<int>(temp_vec.size());
 
-            // this increments E inside Build_MDD
             Build_MDD(temp_vec);
         }
     }
 }
 
 // ---------------------------------------------------------------------
-// load without preprocessing
+// Load_items (FIXED: Moved DFS logic out of 'else')
 // ---------------------------------------------------------------------
 bool Load_items(string &inst_name) {
     ifstream file(inst_name);
@@ -254,16 +241,20 @@ bool Load_items(string &inst_name) {
                     } else {
                         ditem = it->second;
                     }
+                    // CRASH FIX: Ensure L tracks max item even in dictionary mode
+                    if (L < abs(ditem)) L = abs(ditem);
                 } else {
                     ditem = stoi(itm);
                     if (L < abs(ditem)) {
                         L = abs(ditem);
-                        // make sure DFS is large enough (unless just_build)
-                        while (static_cast<int>(DFS.size()) < L && !just_build) {
-                            DFS.reserve(L);
-                            DFS.emplace_back(-((int)DFS.size()) - 1);
-                        }
                     }
+                }
+
+                // CRASH FIX: This loop used to be inside the 'else' block.
+                // It must run regardless of use_dic mode, or DFS vector stays empty -> Crash.
+                while (static_cast<int>(DFS.size()) < L && !just_build) {
+                    DFS.reserve(L);
+                    DFS.emplace_back(-((int)DFS.size()) - 1);
                 }
 
                 temp_vec.push_back(ditem);

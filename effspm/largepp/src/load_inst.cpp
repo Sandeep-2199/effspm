@@ -7,11 +7,11 @@
 #include "freq_miner.hpp"
 #include "utility.hpp"
 
-namespace largepp {   // ─── BEGIN namespace ─────────────────────
+namespace largepp {   
 using namespace std;
 
 /* ------------------------------------------------------------------
- *  Global definitions (match the externs in load_inst.hpp)
+ * Global definitions
  * ---------------------------------------------------------------- */
 unsigned int        M = 0, L = 0;
 unsigned long long  N = 0, E = 0;
@@ -20,13 +20,13 @@ vector<vector<int>> items;
 vector<Pattern>     DFS;
 vector<int>         item_dic;
 
-/*  Forward decls for helper routines in this file  */
+/* Forward decls  */
 static bool  Load_items(string& inst);
 static void  Load_items_pre(string& inst);
 static bool  Preprocess(string& inst, double thresh);
 
 /* ==================================================================
- *  MAIN ENTRY — load from disk
+ * MAIN ENTRY
  * ================================================================= */
 bool Load_instance(string& items_file, double thresh)
 {
@@ -35,7 +35,7 @@ bool Load_instance(string& items_file, double thresh)
     if (pre_pro) {
         if (!Preprocess(items_file, thresh)) return false;
 
-        cout << "\nPreprocess done in " << give_time(clock() - kk) << " seconds\n\n";
+        if (b_disp) cout << "\nPreprocess done in " << give_time(clock() - kk) << " seconds\n\n";
 
         DFS.clear();
         DFS.reserve(L);
@@ -50,34 +50,18 @@ bool Load_instance(string& items_file, double thresh)
         return false;
     else
         theta = (thresh < 1.0) ? ceil(thresh * N) : thresh;
-    if (b_disp)
-        cout << "\nMDD Database built in " << give_time(clock() - kk) << " seconds\n\n";
-    if (b_disp)
+    
+    if (b_disp) {
+        cout << "\nMDD Database built in " << give_time(clock() - kk) << " seconds\n";
         cout << "Found " << N << " sequence, with max line len " << M
              << ", and " << L << " items, and " << E << " enteries\n";
-
-    // ───────────────────────────────────────────────────────────
-    // DEBUG snapshot of seeds right after loading
-    // ───────────────────────────────────────────────────────────
-    {
-        unsigned long long seeds_ge_theta = 0, seeds_nonzero = 0, max_freq = 0;
-        for (size_t i = 0; i < DFS.size(); ++i) {
-            if (DFS[i].freq > 0) ++seeds_nonzero;
-            if (DFS[i].freq >= theta) ++seeds_ge_theta;
-            if (DFS[i].freq > max_freq) max_freq = DFS[i].freq;
-        }
-       // std::cout << " theta=" << theta
-               //   << " | DFS.size=" << DFS.size()
-               //   << " | seeds>=theta=" << seeds_ge_theta
-              //    << " | seeds>0=" << seeds_nonzero
-              //    << " | max_seed_freq=" << max_freq << "\n";
     }
 
     return true;
 }
 
 /* ==================================================================
- *  ALT ENTRY — load directly from a Python list of lists
+ * ALT ENTRY — load directly from a Python list of lists
  * ================================================================= */
 void Load_py(const pybind11::object& data, double thresh)
 {
@@ -102,12 +86,14 @@ void Load_py(const pybind11::object& data, double thresh)
 }
 
 /* =================================================================
- *  The professor’s original helpers — untouched except minor safety
+ * Helpers
  * ================================================================= */
 static bool Preprocess(string& inst, double thresh)
 {
     ifstream file(inst);
-    vector<unsigned long long> freq(1000000), counted(1000000, 0);
+    // Use dynamic resizing instead of hardcoded 1000000 to prevent crashes on huge items
+    vector<unsigned long long> freq; 
+    vector<unsigned long long> counted;
 
     if (file.good()) {
         string line; int ditem;
@@ -117,12 +103,15 @@ static bool Preprocess(string& inst, double thresh)
             string itm;
             while (word >> itm) {
                 ditem = stoi(itm);
-                L = max<unsigned int>(L, static_cast<unsigned int>(abs(ditem)));
+                if (L < static_cast<unsigned int>(abs(ditem)))
+                    L = static_cast<unsigned int>(abs(ditem));
 
+                // Resize logic to prevent out-of-bounds access
                 if (freq.size() < L) {
                     freq.resize(L, 0);
                     counted.resize(L, 0);
                 }
+                
                 if (counted[abs(ditem) - 1] != N) {
                     ++freq[abs(ditem) - 1];
                     counted[abs(ditem) - 1] = N;
@@ -141,8 +130,8 @@ static bool Preprocess(string& inst, double thresh)
     for (unsigned int i = 0; i < L; ++i)
         if (freq[i] >= theta) item_dic[i] = ++real_L;
 
-    cout << "Original number of items: " << L
-         << "  Reduced to: " << real_L << '\n';
+    if(b_disp) 
+        cout << "Original number of items: " << L << "  Reduced to: " << real_L << '\n';
 
     L = real_L;
     N = 0;
@@ -166,7 +155,8 @@ static void Load_items_pre(string& inst)
         while (word >> itm) {
             ditem = stoi(itm);
 
-            if (item_dic[abs(ditem) - 1] == -1) {
+            // Safety check for dictionary bounds
+            if (abs(ditem)-1 >= item_dic.size() || item_dic[abs(ditem) - 1] == -1) {
                 if (!sgn) sgn = ditem < 0;
                 continue;
             } else {
@@ -205,7 +195,7 @@ static bool Load_items(string& inst)
     string line; int size_m, ditem;
     while (getline(file, line) && give_time(clock() - start_time) < time_limit) {
         ++N;
-        vector<bool> counted(L, 0);
+        vector<bool> counted(L, 0); // Initial size based on current L
         istringstream word(line);
 
         items.emplace_back();
@@ -215,9 +205,15 @@ static bool Load_items(string& inst)
             ditem = stoi(itm);
             if (L < static_cast<unsigned int>(abs(ditem))) {
                 L = static_cast<unsigned int>(abs(ditem));
+                
+                // 1. Grow global DFS structure
                 while (DFS.size() < L) {
                     DFS.emplace_back(-int(DFS.size()) - 1);
-                    counted.push_back(0);
+                }
+                // 2. CRASH FIX: Grow local counted vector immediately!
+                // Without this, counted[ditem-1] writes to invalid memory.
+                if (counted.size() < L) {
+                    counted.resize(L, 0);
                 }
             }
             items.back().push_back(ditem);
@@ -236,4 +232,4 @@ static bool Load_items(string& inst)
     return true;
 }
 
-} // namespace largepp  // ─── END namespace ──────────────────────
+} // namespace largepp

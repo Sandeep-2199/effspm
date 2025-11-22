@@ -260,7 +260,7 @@ m.def("BTMiner",
        bool verbose,
        const std::string &out_file)
     {
-        // 1) Configure professor globals
+        // 1) Configure globals
         btminer::time_limit = static_cast<int>(time_limit);
         btminer::pre_pro    = preproc;
         btminer::use_dic    = use_dic;
@@ -271,17 +271,15 @@ m.def("BTMiner",
         btminer::M_mult     = 1;
         btminer::just_build = false;
 
-                // 2) HARD RESET of *known* global state for BTMiner
-        btminer::ClearCollected();   // clear collected patterns
-        btminer::Tree.clear();       // clear MDD tree
-        btminer::DFS.clear();        // clear DFS patterns
-
-        // clear all frequency / mapping / item structures
-        btminer::freq.clear();
-        btminer::item_dic.clear();
+        // 2) CRASH FIX: Force Memory Release
+        // .clear() keeps capacity reserved (leading to OOM). .swap() releases it.
+        std::vector<btminer::Arc>().swap(btminer::Tree);
+        std::vector<btminer::Pattern>().swap(btminer::DFS);
+        std::vector<std::vector<int>>().swap(btminer::collectedPatterns);
+        std::vector<int>().swap(btminer::freq);
+        std::vector<int>().swap(btminer::item_dic);
         btminer::item_map.clear();
         btminer::item_map_rev.clear();
-        btminer::items.clear();      // if you have this defined anywhere
 
         // reset scalar globals
         btminer::M         = 0;
@@ -292,20 +290,16 @@ m.def("BTMiner",
         btminer::num_patt  = 0;
         btminer::num_nodes = 0;
         btminer::cur_node  = 0;
-        // N_mult, M_mult, flags are set just above
 
         btminer::start_time = std::clock();
-
 
         // 3) Handle input (path or list-of-lists)
         TempFile tmp;
         std::string path;
 
         if (py::isinstance<py::str>(data)) {
-            // File path: use directly
             path = data.cast<std::string>();
         } else {
-            // Python list → write to a temp file in professor’s format
             auto seqs = data.cast<std::vector<std::vector<int>>>();
             tmp.path  = write_temp_seq_file(seqs);
             path      = tmp.path;
@@ -343,14 +337,7 @@ m.def("BTMiner",
     py::arg("use_dic")    = false,
     py::arg("verbose")    = false,
     py::arg("out_file")   = ""
-);
-
-        // ─────────────────────────────────────────────────────────────
-    // HTMiner  (works on files; we use a temp file for in-memory data)
-    // ─────────────────────────────────────────────────────────────
-   // ─────────────────────────────────────────────────────────────
-// HTMiner  (always uses professor's Load_instance; pre_pro forced ON)
-// ─────────────────────────────────────────────────────────────
+); 
 m.def("HTMiner",
     [](py::object data,
        double minsup,
@@ -439,72 +426,55 @@ m.def("HTMiner",
     py::arg("verbose")    = false,
     py::arg("out_file")   = ""
 );
+m.def("LargePrefixProjection",
+        [](py::object data,
+           double minsup,
+           unsigned int time_limit,
+           bool preproc,
+           bool use_dic,
+           bool verbose,
+           const std::string &out_file)
+        {
+            largepp::time_limit = time_limit;
+            largepp::pre_pro    = preproc;
+            largepp::use_dic    = use_dic;
+            largepp::use_list   = true;
+            largepp::b_disp     = verbose;
+            largepp::b_write    = !out_file.empty();
+            largepp::out_file   = out_file;
+            largepp::just_build = false;
 
-    // ─────────────────────────────────────────────────────────────
-    // LargePrefixProjection  (already has its own Load_py)
-    // ─────────────────────────────────────────────────────────────
-   m.def("LargePrefixProjection",
-    [](py::object data,
-       double minsup,
-       unsigned int time_limit,
-       bool preproc,
-       bool use_dic,
-       bool verbose,
-       const std::string &out_file)
-    {
-        // 1) Configure global flags
-        largepp::time_limit = time_limit;
-        largepp::pre_pro    = preproc;
-        largepp::use_dic    = use_dic;
-        largepp::use_list   = true;        // LargePrefixProjection is list-based
-        largepp::b_disp     = verbose;
-        largepp::b_write    = !out_file.empty();
-        largepp::out_file   = out_file;
-        largepp::just_build = false;
+            // MEMORY FIX
+            largepp::ClearCollected();
+            std::vector<std::vector<int>>().swap(largepp::items);
+            std::vector<int>().swap(largepp::item_dic);
+            std::vector<largepp::Pattern>().swap(largepp::DFS);
 
-        // 2) HARD RESET of largepp global state
-        //    (only touch symbols that actually exist in largepp)
-        largepp::ClearCollected();         // clear previously collected patterns
+            largepp::M = 0; largepp::L = 0; largepp::N = 0; 
+            largepp::theta = 0; largepp::E = 0; largepp::num_patt = 0;
+            largepp::start_time = std::clock();
 
-        // If these exist in largepp::load_inst.hpp / utility.hpp they’ll compile;
-        // if the compiler complains about any of them, just comment that line out.
-        largepp::items.clear();            // transaction DB
-        largepp::DFS.clear();              // DFS pattern stack, if list-based miner uses it
+            if (py::isinstance<py::str>(data)) {
+                std::string fname = data.cast<std::string>();
+                if (!largepp::Load_instance(fname, minsup)) {
+                     throw std::runtime_error("LargePrefixProjection: failed to load");
+                }
+            } else {
+                largepp::Load_py(data, minsup);
+            }
 
-        largepp::M      = 0;
-        largepp::L      = 0;
-        largepp::N      = 0;
-        largepp::theta  = 0;
-        largepp::E      = 0;
-        largepp::num_patt = 0;
+            largepp::Freq_miner();
 
-        largepp::start_time = std::clock();
+            py::dict out;
+            out["patterns"] = largepp::GetCollected();
+            out["time"]     = largepp::give_time(std::clock() - largepp::start_time);
+            return out;
+        },
+        py::arg("data"), py::arg("minsup") = 0.01, py::arg("time_limit") = 36000,
+        py::arg("preproc") = false, py::arg("use_dic") = false,
+        py::arg("verbose") = false, py::arg("out_file") = ""
+    );
 
-        // 3) Handle input (path or Python list)
-        if (py::isinstance<py::str>(data)) {
-            std::string fname = data.cast<std::string>();
-            largepp::Load_instance(fname, minsup);
-        } else {
-            largepp::Load_py(data, minsup);
-        }
-
-        // 4) Run miner
-        largepp::Freq_miner();
-
-        // 5) Return results
-        py::dict out;
-        out["patterns"] = largepp::GetCollected();
-        out["time"]     = largepp::give_time(std::clock() - largepp::start_time);
-        return out;
-    },
-    py::arg("data"),
-    py::arg("minsup")     = 0.01,
-    py::arg("time_limit") = 36000,
-    py::arg("preproc")    = false,
-    py::arg("use_dic")    = false,
-    py::arg("verbose")    = false,
-    py::arg("out_file")   = ""
-);
 
     // ─────────────────────────────────────────────────────────────
     // LargeBTMiner  (always uses professor's largebm::Load_instance)
