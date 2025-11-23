@@ -94,7 +94,7 @@ PYBIND11_MODULE(_effspm, m) {
     // ─────────────────────────────────────────────────────────────
     // PrefixProjection  (works directly on Python lists or files)
     // ─────────────────────────────────────────────────────────────
-    m.def("PrefixProjection",
+  m.def("PrefixProjection",
         [](py::object data,
            double minsup,
            unsigned int time_limit,
@@ -103,52 +103,52 @@ PYBIND11_MODULE(_effspm, m) {
            bool verbose,
            const std::string &out_file)
         {
+            // 1. Set Globals
             ::time_limit = time_limit;
             ::pre_pro    = preproc;
             ::use_dic    = use_dic;
-            ::use_list   = false;
-            ::b_disp     = verbose;                  // controls prints in original code
+            ::use_list   = false; // Or true if you want to enable the list optimization
+            ::b_disp     = verbose;
             ::b_write    = !out_file.empty();
             ::out_file   = out_file;
 
+            // 2. CRASH FIX: FORCE MEMORY RESET
+            // This matches the fix we did for BTMiner. 
+            // Without this, Jupyter crashes after a few runs.
             ClearCollected();
-            start_time = std::clock();
+            std::vector<std::vector<int>>().swap(::items);
+            std::vector<Pattern>().swap(::DFS);
+            std::vector<int>().swap(::item_dic);
+            
+            // Reset Scalars
+            ::M = 0; ::L = 0; ::N = 0; ::theta = 0; ::E = 0; ::num_patt = 0;
+            ::start_time = std::clock();
+
+            // 3. Handle Input
+            TempFile tmp;
+            std::string path;
 
             if (py::isinstance<py::str>(data)) {
-                std::string path = data.cast<std::string>();
-                if (!Load_instance(path, minsup))
-                    throw std::runtime_error("PrefixProjection: failed to load file: " + path);
+                path = data.cast<std::string>();
             } else {
                 auto seqs = data.cast<std::vector<std::vector<int>>>();
-                items = std::move(seqs);
-                N = items.size();
-
-                int max_id = 0;
-                for (auto &seq : items)
-                    for (int x : seq)
-                        max_id = std::max(max_id, std::abs(x));
-                L = max_id;
-
-                theta = (minsup < 1.0) ? std::ceil(minsup * N) : minsup;
-
-                DFS.clear();
-                DFS.reserve(L);
-                for (unsigned int i = 0; i < L; ++i)
-                    DFS.emplace_back(-static_cast<int>(i) - 1);
-
-                M = 0;
-                E = 0;
-                for (auto &seq : items) {
-                    M = std::max<unsigned int>(M, seq.size());
-                    E += seq.size();
-                }
+                tmp.path  = write_temp_seq_file(seqs);
+                path      = tmp.path;
             }
 
+            // 4. Load Data
+            // This calls your FIXED load_inst.cpp
+            if (!Load_instance(path, minsup)) {
+                throw std::runtime_error("PrefixProjection: failed to load file: " + path);
+            }
+
+            // 5. Run Miner
             Freq_miner();
 
+            // 6. Return Results
             py::dict out;
             out["patterns"] = GetCollected();
-            out["time"]     = give_time(std::clock() - start_time);
+            out["time"]     = give_time(std::clock() - ::start_time);
             return out;
         },
         py::arg("data"),
@@ -159,6 +159,7 @@ PYBIND11_MODULE(_effspm, m) {
         py::arg("verbose")    = false,
         py::arg("out_file")   = ""
     );
+
 
     // ─────────────────────────────────────────────────────────────
     // BTMiner  (always uses professor's Load_instance)
