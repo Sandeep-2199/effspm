@@ -95,3 +95,6 @@ effspm.egg-info/
 
 # Debug stuff
 effspm_load_debug.log.zip
+.DS_Store
+*.egg-info/
+__pycache__/
